@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Low-Light Camera Demo</title>
+  <style>
+    html, body {
+      margin:0; padding:0; height:100%; width:100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+      background:#000;
+      color:#fff; 
+      overflow:hidden; 
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Container for video and processed canvas */
+    .video-container, .processed-container {
+      width: 50%;
+      height: 100%;
+      position: relative;
+      flex: 1;
+      display: none; /* Hidden by default, shown in Live mode */
+    }
+
+    .video-container.active, .processed-container.active {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .video-container {
+      background: #111;
+    }
+
+    .processed-container {
+      background: #222;
+    }
+
+    /* Video and Canvas styling */
+    #video, #processedCanvas {
+      max-width: 100%;
+      max-height: 100%;
+      border: 2px solid #555;
+      border-radius: 10px;
+    }
+
+    /* Overlay adjustments */
+    .overlay {
+      position: absolute; 
+      left:0; right:0;
+      padding:10px;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      flex-wrap:wrap;
+      z-index:2;
+    }
+
+    .top-overlay {
+      top:0;
+      background:linear-gradient(to bottom, rgba(0,0,0,0.7), rgba(0,0,0,0));
+      flex-direction:column;
+      align-items:center;
+    }
+
+    .bottom-overlay {
+      bottom:0;
+      background:linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0));
+      flex-direction:row;
+      justify-content:space-around;
+      align-items:center;
+    }
+
+    /* Controls container */
+    .controls {
+      display:flex;
+      justify-content:center;
+      flex-wrap:wrap;
+      gap:15px;
+      margin:10px 0;
+    }
+
+    /* Parameter control styling */
+    .param-control {
+      display:flex; 
+      align-items:center; 
+      background:rgba(0,0,0,0.5);
+      border-radius:30px; 
+      padding:5px 15px;
+      backdrop-filter: blur(6px);
+      transition: all 0.3s ease;
+    }
+
+    .param-control:hover {
+      background:rgba(255,255,255,0.1);
+    }
+
+    .param-control span {
+      margin:0 5px;
+      min-width:60px;
+      text-align:right;
+      font-size:14px;
+      opacity:0.8;
+    }
+
+    .value-display {
+      background:#222; 
+      border-radius:20px; 
+      padding:3px 10px; 
+      min-width:40px; 
+      text-align:center;
+      margin:0 5px;
+      font-size:14px;
+    }
+
+    /* Styled radio buttons (for mode and camera selection) */
+    .mode-selector, .camera-selector {
+      display:flex; 
+      align-items:center; 
+      gap:10px;
+    }
+    .mode-selector label, .camera-selector label {
+      display:flex; 
+      align-items:center; 
+      gap:5px;
+      cursor:pointer;
+      font-size:14px;
+      opacity:0.9;
+    }
+
+    .nice-radio input[type="radio"] {
+      appearance:none;
+      width:16px; height:16px;
+      border-radius:50%;
+      border:2px solid #999;
+      background:#555;
+      position:relative;
+      outline: none;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .nice-radio input[type="radio"]:checked {
+      border-color:#0af;
+      background:#0af;
+      box-shadow:0 0 0 3px rgba(0,170,255,0.3);
+    }
+
+    button {
+      background:#333; 
+      color:#fff;
+      border:none; 
+      border-radius:25px; 
+      padding:10px 20px;
+      cursor:pointer;
+      font-size:14px;
+      transition: background 0.3s ease;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    button:hover {
+      background:#444;
+    }
+
+    /* Icon-like plus/minus buttons */
+    #exposureMinus, #exposurePlus, #blendMinus, #blendPlus, #gainMinus, #gainPlus {
+      border-radius:50%;
+      width:30px;
+      height:30px;
+      padding:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#444;
+      font-weight:bold;
+      font-size:18px;
+      cursor:pointer;
+    }
+
+    #exposureMinus:hover, #exposurePlus:hover, #blendMinus:hover, #blendPlus:hover, #gainMinus:hover, #gainPlus:hover {
+      background:#555;
+    }
+
+    /* Final result container */
+    .final-container {
+      display:none;
+      position:absolute;
+      top:0; left:0; width:100%; height:100%;
+      background:rgba(0,0,0,0.9);
+      z-index:3;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      padding:20px;
+      animation:fadeIn 0.5s ease;
+    }
+
+    .final-container h5 {
+      margin-bottom:20px;
+      font-size:18px;
+      text-align:center;
+    }
+
+    #finalCanvas {
+      border:2px solid #666;
+      max-width:90%;
+      max-height:60%;
+      border-radius:10px;
+      margin-bottom:20px;
+    }
+
+    /* Gallery styling */
+    .gallery {
+      display:flex;
+      flex-direction:row;
+      overflow-x:auto;
+      padding:10px;
+      gap:10px;
+      max-width:80%;
+      scrollbar-width:none;
+    }
+
+    .gallery::-webkit-scrollbar {
+      display:none;
+    }
+
+    .gallery img {
+      width:50px; height:50px; object-fit:cover; cursor:pointer;
+      border:2px solid #333; 
+      border-radius:8px;
+      transition:transform 0.3s;
+    }
+
+    .gallery img:hover {
+      transform:scale(1.1);
+      border-color:#0af;
+    }
+
+    /* Fullscreen image viewer */
+    .image-viewer {
+      display:none;
+      position:absolute; 
+      top:0; left:0; width:100%; height:100%;
+      background:rgba(0,0,0,0.9);
+      z-index:4;
+      justify-content:center;
+      align-items:center;
+      overflow:hidden;
+      animation:fadeIn 0.3s ease;
+    }
+
+    .image-viewer img {
+      max-width:90%; max-height:90%;
+      border-radius:10px;
+      box-shadow:0 0 20px rgba(0,0,0,0.8);
+    }
+
+    /* Progress Bar */
+    .progress-bar-container {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80%;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      overflow: hidden;
+      display: none;
+      z-index:3;
+    }
+
+    .progress-bar {
+      height: 10px;
+      width: 0%;
+      background: #0af;
+      transition: width 0.1s linear;
+    }
+
+    /* Responsive Adjustments */
+    @media (max-width:1200px) {
+      .video-container, .processed-container {
+        width: 50%;
+      }
+    }
+
+    @media (max-width:800px) {
+      .video-container, .processed-container {
+        width: 100%;
+        height: 50%;
+      }
+    }
+
+    @media (max-width:600px) {
+      .param-control span {
+        font-size:12px;
+        min-width:50px;
+      }
+      .param-control .value-display {
+        font-size:12px;
+      }
+      button {
+        font-size:12px; padding:8px 15px;
+      }
+      .gallery img {
+        width:40px; height:40px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Containers for Live Video and Processed Video -->
+  <div class="video-container" id="videoContainer">
+    <video id="video" autoplay playsinline></video>
+  </div>
+  <div class="processed-container" id="processedContainer">
+    <canvas id="processedCanvas"></canvas>
+  </div>
+
+  <!-- Top overlay for camera and mode selection -->
+  <div class="overlay top-overlay">
+    <div class="controls">
+      <div class="param-control camera-selector">
+        <span>Camera:</span>
+        <label class="nice-radio">
+          <input type="radio" name="camera" value="user"> Front
+        </label>
+        <label class="nice-radio">
+          <input type="radio" name="camera" value="environment" checked> Back
+        </label>
+      </div>
+      <div class="param-control mode-selector">
+        <span>Mode:</span>
+        <label class="nice-radio">
+          <input type="radio" name="mode" value="live" checked> Live
+        </label>
+        <label class="nice-radio">
+          <input type="radio" name="mode" value="photo"> Photo
+        </label>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="param-control">
+        <span>Exposure:</span>
+        <button id="exposureMinus">-</button>
+        <div class="value-display" id="exposureVal">5</div>
+        <button id="exposurePlus">+</button>
+      </div>
+      <div class="param-control">
+        <span>Blend:</span>
+        <button id="blendMinus">-</button>
+        <div class="value-display" id="blendVal">0.10</div>
+        <button id="blendPlus">+</button>
+      </div>
+      <div class="param-control">
+        <span>Gain:</span>
+        <button id="gainMinus">-</button>
+        <div class="value-display" id="gainVal">1.0</div>
+        <button id="gainPlus">+</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom overlay for capture and gallery -->
+  <div class="overlay bottom-overlay">
+    <button id="captureBtn">Capture</button>
+    <button id="resetBtn">Reset</button>
+    <div class="gallery" id="gallery"></div>
+  </div>
+
+  <!-- Final captured image container -->
+  <div class="final-container" id="finalContainer">
+    <h5>Final Captured Image</h5>
+    <canvas id="finalCanvas"></canvas>
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button id="shareBtn">Share</button>
+      <button id="closeFinalBtn">Close</button>
+    </div>
+  </div>
+
+  <!-- Fullscreen image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <img id="viewerImg" src="">
+  </div>
+
+  <!-- Progress Bar -->
+  <div class="progress-bar-container" id="progressBarContainer">
+    <div class="progress-bar" id="progressBar"></div>
+  </div>
+
+  <script>
+  /********** Variables and DOM Elements **********/
+  const video = document.getElementById('video');
+  const processedCanvas = document.getElementById('processedCanvas');
+  const processedCtx = processedCanvas.getContext('2d');
+
+  const videoContainer = document.getElementById('videoContainer');
+  const processedContainer = document.getElementById('processedContainer');
+
+  const cameraRadios = document.querySelectorAll('input[name="camera"]');
+  const modeRadios = document.querySelectorAll('input[name="mode"]');
+  const captureBtn = document.getElementById('captureBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const finalContainer = document.getElementById('finalContainer');
+  const finalCanvas = document.getElementById('finalCanvas');
+  const finalCtx = finalCanvas.getContext('2d');
+  const shareBtn = document.getElementById('shareBtn');
+  const closeFinalBtn = document.getElementById('closeFinalBtn');
+  const gallery = document.getElementById('gallery');
+  const imageViewer = document.getElementById('imageViewer');
+  const viewerImg = document.getElementById('viewerImg');
+
+  const exposureValEl = document.getElementById('exposureVal');
+  const blendValEl = document.getElementById('blendVal');
+  const gainValEl = document.getElementById('gainVal');
+
+  const exposureMinus = document.getElementById('exposureMinus');
+  const exposurePlus = document.getElementById('exposurePlus');
+  const blendMinus = document.getElementById('blendMinus');
+  const blendPlus = document.getElementById('blendPlus');
+  const gainMinus = document.getElementById('gainMinus');
+  const gainPlus = document.getElementById('gainPlus');
+
+  const progressBarContainer = document.getElementById('progressBarContainer');
+  const progressBar = document.getElementById('progressBar');
+
+  let mode = 'live';
+  let exposureTime = 5; // in seconds
+  let blendFactor = 0.10;
+  let gain = 1.0;
+
+  let animationId = null;
+  let isCapturing = false;
+  let captureStartTime = 0;
+  let frameCount = 0;
+
+  let sumBuffer = null;
+  let minBuffer = null;
+  let maxBuffer = null;
+
+  let offscreen, offctx;
+  let currentCamera = 'environment'; // default to back camera
+
+  let capturedImages = [];
+  let currentViewerIndex = 0;
+
+  let processedFrameData = null; // To store the processed frame
+
+  /********** Event Listeners **********/
+  // Mode Selection Listener
+  modeRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      mode = document.querySelector('input[name="mode"]:checked').value;
+      if (mode === 'live') {
+        enterLiveMode();
+      } else if (mode === 'photo') {
+        enterPhotoMode();
+      }
+    });
+  });
+
+  // Camera Selection Listener
+  cameraRadios.forEach(radio => {
+    radio.addEventListener('change', async () => {
+      currentCamera = document.querySelector('input[name="camera"]:checked').value;
+      await initCamera(currentCamera);
+    });
+  });
+
+  // Exposure Controls
+  exposureMinus.addEventListener('click', () => {
+    exposureTime = Math.max(1, exposureTime - 1);
+    exposureValEl.textContent = exposureTime;
+  });
+  exposurePlus.addEventListener('click', () => {
+    exposureTime = Math.min(32, exposureTime + 1);
+    exposureValEl.textContent = exposureTime;
+  });
+
+  // Blend Controls
+  blendMinus.addEventListener('click', () => {
+    blendFactor = Math.max(0.01, (blendFactor - 0.01).toFixed(2));
+    blendValEl.textContent = blendFactor.toFixed(2);
+  });
+  blendPlus.addEventListener('click', () => {
+    blendFactor = Math.min(1.0, (parseFloat(blendFactor) + 0.01).toFixed(2));
+    blendValEl.textContent = blendFactor.toFixed(2);
+  });
+
+  // Gain Controls
+  gainMinus.addEventListener('click', () => {
+    gain = Math.max(1.0, (gain - 0.1).toFixed(1));
+    gainValEl.textContent = gain.toFixed(1);
+  });
+  gainPlus.addEventListener('click', () => {
+    gain = Math.min(5.0, (parseFloat(gain) + 0.1).toFixed(1));
+    gainValEl.textContent = gain.toFixed(1);
+  });
+
+  // Capture Button Listener
+  captureBtn.addEventListener('click', () => {
+    if (mode === 'live') {
+      captureLivePhoto();
+    } else if (mode === 'photo' && !isCapturing) {
+      startPhotoCapture();
+    }
+  });
+
+  // Reset Button Listener
+  resetBtn.addEventListener('click', () => {
+    resetApplication();
+  });
+
+  // Close Final Image Listener
+  closeFinalBtn.addEventListener('click', () => {
+    finalContainer.style.display = 'none';
+  });
+
+  // Share Button Listener
+  shareBtn.addEventListener('click', async () => {
+    if (navigator.share && capturedImages.length > 0) {
+      const url = capturedImages[capturedImages.length - 1];
+      const blob = dataURLtoBlob(url);
+      const file = new File([blob], "capture.jpg", { type:'image/jpeg'});
+      try {
+        await navigator.share({ files: [file], title:'Captured Image', text:'Check this out!' });
+      } catch(e) {
+        console.log('Sharing failed:', e);
+      }
+    } else {
+      alert('Web Share not supported or no image captured.');
+    }
+  });
+
+  // Gallery Click Listener
+  gallery.addEventListener('click', (e) => {
+    if (e.target.tagName === 'IMG') {
+      const index = parseInt(e.target.getAttribute('data-index'),10);
+      openViewer(index);
+    }
+  });
+
+  /********** Image Viewer Gestures **********/
+  let startX = 0;
+  imageViewer.addEventListener('touchstart', (e)=>{
+    startX = e.touches[0].clientX;
+  });
+  imageViewer.addEventListener('touchend', (e)=>{
+    const endX = e.changedTouches[0].clientX;
+    const diff = endX - startX;
+    if (Math.abs(diff)>50) {
+      if (diff>0) showPrevImage();
+      else showNextImage();
+    }
+  });
+  imageViewer.addEventListener('click', ()=>{
+    imageViewer.style.display='none';
+  });
+
+  function openViewer(index) {
+    if (capturedImages[index]) {
+      currentViewerIndex = index;
+      viewerImg.src = capturedImages[index];
+      imageViewer.style.display='flex';
+    }
+  }
+  function showNextImage() {
+    if (currentViewerIndex < capturedImages.length-1) {
+      currentViewerIndex++;
+      viewerImg.src = capturedImages[currentViewerIndex];
+    }
+  }
+  function showPrevImage() {
+    if (currentViewerIndex > 0) {
+      currentViewerIndex--;
+      viewerImg.src = capturedImages[currentViewerIndex];
+    }
+  }
+
+  /********** Utility **********/
+  function dataURLtoBlob(dataurl) {
+    const arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+      bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+    for (let i=0; i<n; i++){
+      u8arr[i]=bstr.charCodeAt(i);
+    }
+    return new Blob([u8arr], {type:mime});
+  }
+
+  /********** Image Processing Functions **********/
+  function applyGammaCorrection(imageData, gamma=0.9) {
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i+=4) {
+      data[i]   = 255 * Math.pow(data[i]/255,   gamma);
+      data[i+1] = 255 * Math.pow(data[i+1]/255, gamma);
+      data[i+2] = 255 * Math.pow(data[i+2]/255, gamma);
+    }
+  }
+
+  function applyBilateralFilter(imageData, diameter=5, sigmaI=20, sigmaS=3) {
+    const width = imageData.width;
+    const height = imageData.height;
+    const data = imageData.data;
+    const output = new Uint8ClampedArray(data.length);
+
+    const half = Math.floor(diameter/2);
+    const gaussSpatial = [];
+    for (let y=-half; y<=half; y++){
+      for(let x=-half; x<=half; x++){
+        const dist2 = x*x + y*y;
+        gaussSpatial.push(Math.exp(-dist2/(2*sigmaS*sigmaS)));
+      }
+    }
+
+    for (let y=0; y<height; y++) {
+      for (let x=0; x<width; x++) {
+        let sumR=0, sumG=0, sumB=0;
+        let wsum=0;
+        const idx = (y*width+x)*4;
+        const centerR = data[idx], centerG=data[idx+1], centerB=data[idx+2];
+
+        let i=0;
+        for (let ky=-half; ky<=half; ky++){
+          for (let kx=-half; kx<=half; kx++){
+            const nx = Math.min(width-1, Math.max(0, x+kx));
+            const ny = Math.min(height-1, Math.max(0, y+ky));
+            const nidx = (ny*width+nx)*4;
+            const nr=data[nidx], ng=data[nidx+1], nb=data[nidx+2];
+
+            const diffR = nr - centerR;
+            const diffG = ng - centerG;
+            const diffB = nb - centerB;
+            const intensityDiff2 = (diffR*diffR+diffG*diffG+diffB*diffB)/3;
+
+            const w = gaussSpatial[i]*Math.exp(-intensityDiff2/(2*sigmaI*sigmaI));
+            sumR += nr*w;
+            sumG += ng*w;
+            sumB += nb*w;
+            wsum += w;
+            i++;
+          }
+        }
+        output[idx]  = sumR/wsum;
+        output[idx+1]= sumG/wsum;
+        output[idx+2]= sumB/wsum;
+        output[idx+3]= 255;
+      }
+    }
+    for (let i=0; i<data.length; i++){
+      data[i]=output[i];
+    }
+  }
+
+  function applyUnsharpMask(imageData, amount=1.0) {
+    const width = imageData.width;
+    const height = imageData.height;
+    const data = imageData.data;
+    const blurred = new Uint8ClampedArray(data.length);
+
+    const kernel = [1,2,1, 2,4,2, 1,2,1];
+    let sumk=0; for (let k of kernel) sumk+=k;
+
+    for (let y=0; y<height; y++){
+      for (let x=0; x<width; x++){
+        let r=0,g=0,b=0;
+        let i=0;
+        for (let ky=-1; ky<=1; ky++){
+          for (let kx=-1; kx<=1; kx++){
+            const px = Math.min(width-1, Math.max(0, x+kx));
+            const py = Math.min(height-1, Math.max(0, y+ky));
+            const idx = (py*width+px)*4;
+            const w = kernel[i++];
+            r+=data[idx]*w;
+            g+=data[idx+1]*w;
+            b+=data[idx+2]*w;
+          }
+        }
+        const idx=(y*width+x)*4;
+        blurred[idx]=r/sumk;
+        blurred[idx+1]=g/sumk;
+        blurred[idx+2]=b/sumk;
+        blurred[idx+3]=255;
+      }
+    }
+
+    for (let i=0; i<data.length; i+=4) {
+      const r = data[i], g=data[i+1], b=data[i+2];
+      const br=blurred[i], bg=blurred[i+1], bb=blurred[i+2];
+
+      data[i]  = Math.min(255, Math.max(0, r + amount*(r-br)));
+      data[i+1]= Math.min(255, Math.max(0, g + amount*(g-bg)));
+      data[i+2]= Math.min(255, Math.max(0, b + amount*(b-bb)));
+    }
+  }
+
+  /********** Camera Initialization **********/
+  async function initCamera(facingMode) {
+    try {
+      if (animationId) cancelAnimationFrame(animationId);
+      animationId = null;
+
+      if (video.srcObject) {
+        const tracks = video.srcObject.getTracks();
+        tracks.forEach(t => t.stop());
+      }
+
+      const constraints = {
+        video: {
+          facingMode: facingMode
+        },
+        audio: false
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      await new Promise(res => video.onloadedmetadata = ()=>{video.play();res();});
+
+      processedCanvas.width = video.videoWidth;
+      processedCanvas.height = video.videoHeight;
+      finalCanvas.width = video.videoWidth;
+      finalCanvas.height = video.videoHeight;
+
+      offscreen = document.createElement('canvas');
+      offscreen.width = processedCanvas.width;
+      offscreen.height = processedCanvas.height;
+      offctx = offscreen.getContext('2d');
+      offctx.fillStyle = 'black';
+      offctx.fillRect(0, 0, offscreen.width, offscreen.height);
+
+      if (mode === 'live') {
+        enterLiveMode();
+      } else if (mode === 'photo') {
+        enterPhotoMode();
+      }
+    } catch(err) {
+      console.error('Camera error:', err);
+      alert('Unable to access camera');
+    }
+  }
+
+  /********** Main Logic **********/
+  (async function init() {
+    await initCamera(currentCamera);
+  })();
+
+  /********** Mode Handling Functions **********/
+  function enterLiveMode() {
+    // Show video containers
+    videoContainer.classList.add('active');
+    processedContainer.classList.add('active');
+
+    // Hide photo-specific elements
+    finalContainer.style.display = 'none';
+    progressBarContainer.style.display = 'none';
+
+    // Start rendering live frames
+    if (!animationId) {
+      renderLiveFrame();
+    }
+  }
+
+  function enterPhotoMode() {
+    // Hide video containers
+    videoContainer.classList.remove('active');
+    processedContainer.classList.remove('active');
+
+    // Stop any ongoing animation
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    }
+
+    // Clear processed canvas
+    processedCtx.clearRect(0, 0, processedCanvas.width, processedCanvas.height);
+
+    // Prepare for photo capture
+    finalContainer.style.display = 'none';
+    progressBarContainer.style.display = 'none';
+  }
+
+  /********** Capture Functions **********/
+  // Capture a single photo in Live Mode
+  function captureLivePhoto() {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = processedCanvas.width;
+    tempCanvas.height = processedCanvas.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(processedCanvas, 0, 0);
+    const dataURL = tempCanvas.toDataURL('image/jpeg', 0.9);
+    capturedImages.push(dataURL);
+    updateGallery();
+
+    // Optionally, show the captured image immediately
+    showFinalImage(dataURL);
+  }
+
+  // Start the Photo Mode capture (Long Exposure)
+  function startPhotoCapture() {
+    isCapturing = true;
+    finalContainer.style.display = 'none';
+    progressBarContainer.style.display = 'block';
+    progressBar.style.width = '0%';
+
+    sumBuffer = new Float32Array(processedCanvas.width * processedCanvas.height * 4);
+    minBuffer = new Float32Array(processedCanvas.width * processedCanvas.height * 4);
+    maxBuffer = new Float32Array(processedCanvas.width * processedCanvas.height * 4);
+
+    for (let i = 0; i < minBuffer.length; i++) {
+      minBuffer[i] = 255;
+      maxBuffer[i] = 0;
+    }
+
+    frameCount = 0;
+    captureStartTime = performance.now();
+    renderPhotoFrame();
+  }
+
+  // Reset Application to Live Mode
+  function resetApplication() {
+    // Stop any ongoing capture
+    if (isCapturing) {
+      isCapturing = false;
+      progressBarContainer.style.display = 'none';
+      progressBar.style.width = '0%';
+    }
+
+    // Hide final container and image viewer
+    finalContainer.style.display = 'none';
+    imageViewer.style.display = 'none';
+
+    // Show video containers based on current mode
+    if (mode === 'live') {
+      enterLiveMode();
+    } else if (mode === 'photo') {
+      enterPhotoMode();
+    }
+  }
+
+  /********** Live Mode Rendering **********/
+  function renderLiveFrame() {
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+      animationId = requestAnimationFrame(renderLiveFrame);
+      return;
+    }
+
+    // Draw the current frame to processedCanvas
+    processedCtx.drawImage(video, 0, 0, processedCanvas.width, processedCanvas.height);
+    let currentFrame = processedCtx.getImageData(0, 0, processedCanvas.width, processedCanvas.height);
+    let currentData = currentFrame.data;
+
+    // Apply gain if not in original mode
+    if (mode !== 'original') {
+      for (let i = 0; i < currentData.length; i += 4) {
+        currentData[i]   = Math.min(255, currentData[i]   * gain);
+        currentData[i+1] = Math.min(255, currentData[i+1] * gain);
+        currentData[i+2] = Math.min(255, currentData[i+2] * gain);
+      }
+    }
+
+    // Apply image processing steps for live mode
+    applyGammaCorrection(currentFrame, 0.9);
+    applyBilateralFilter(currentFrame, 5, 20, 3);
+    applyUnsharpMask(currentFrame, 1.0);
+    processedCtx.putImageData(currentFrame, 0, 0);
+    animationId = requestAnimationFrame(renderLiveFrame);
+  }
+
+  /********** Photo Mode Rendering **********/
+  function renderPhotoFrame() {
+    if (!isCapturing) return;
+
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+      animationId = requestAnimationFrame(renderPhotoFrame);
+      return;
+    }
+
+    // Draw the current frame to processedCanvas
+    processedCtx.drawImage(video, 0, 0, processedCanvas.width, processedCanvas.height);
+    let currentFrame = processedCtx.getImageData(0, 0, processedCanvas.width, processedCanvas.height);
+    let currentData = currentFrame.data;
+
+    // Apply gain if not in original mode (though in Photo mode, likely always processing)
+    for (let i = 0; i < currentData.length; i += 4) {
+      currentData[i]   = Math.min(255, currentData[i]   * gain);
+      currentData[i+1] = Math.min(255, currentData[i+1] * gain);
+      currentData[i+2] = Math.min(255, currentData[i+2] * gain);
+    }
+
+    // Accumulate frames for long exposure
+    for (let i = 0; i < currentData.length; i++) {
+      const val = currentData[i];
+      sumBuffer[i] += val;
+      if (val < minBuffer[i]) minBuffer[i] = val;
+      if (val > maxBuffer[i]) maxBuffer[i] = val;
+    }
+    frameCount++;
+
+    // Show average so far as a preview
+    const previewData = new Uint8ClampedArray(currentData.length);
+    for (let i = 0; i < currentData.length; i++) {
+      previewData[i] = sumBuffer[i] / frameCount;
+    }
+    const previewImageData = new ImageData(previewData, processedCanvas.width, processedCanvas.height);
+    processedCtx.putImageData(previewImageData, 0, 0);
+
+    // Update progress bar
+    const elapsed = (performance.now() - captureStartTime)/1000;
+    const progress = Math.min((elapsed / exposureTime) * 100, 100);
+    progressBar.style.width = `${progress}%`;
+
+    if (elapsed >= exposureTime) {
+      endPhotoCapture();
+    } else {
+      animationId = requestAnimationFrame(renderPhotoFrame);
+    }
+  }
+
+  // End the Photo Capture process
+  function endPhotoCapture() {
+    if (isCapturing) {
+      isCapturing = false;
+      progressBarContainer.style.display = 'none';
+      processFinalPhoto();
+    }
+  }
+
+  /********** Processing Captured Photo **********/
+  function processFinalPhoto() {
+    // Compute average frame
+    for (let i = 0; i < sumBuffer.length; i++) {
+      sumBuffer[i] = sumBuffer[i] / frameCount;
+    }
+
+    const finalData = new Uint8ClampedArray(sumBuffer.length);
+    for (let i = 0; i < sumBuffer.length; i += 4) {
+      let r_avg = sumBuffer[i], g_avg = sumBuffer[i+1], b_avg = sumBuffer[i+2];
+      let r_min = minBuffer[i], g_min = minBuffer[i+1], b_min = minBuffer[i+2];
+      let r_max = maxBuffer[i], g_max = maxBuffer[i+1], b_max = maxBuffer[i+2];
+
+      const r = r_avg * 0.6 + r_min * 0.2 + r_max * 0.2;
+      const g = g_avg * 0.6 + g_min * 0.2 + g_max * 0.2;
+      const b = b_avg * 0.6 + b_min * 0.2 + b_max * 0.2;
+
+      finalData[i] = Math.max(0, Math.min(255, r));
+      finalData[i+1] = Math.max(0, Math.min(255, g));
+      finalData[i+2] = Math.max(0, Math.min(255, b));
+      finalData[i+3] = 255;
+    }
+
+    const finalImage = new ImageData(finalData, processedCanvas.width, processedCanvas.height);
+    applyBilateralFilter(finalImage, 5, 20, 3);
+    applyGammaCorrection(finalImage, 0.9);
+    applyUnsharpMask(finalImage, 1.0);
+
+    finalCtx.putImageData(finalImage, 0, 0);
+
+    // Convert to dataURL and add to gallery
+    const dataURL = finalCanvas.toDataURL('image/jpeg', 0.9);
+    capturedImages.push(dataURL);
+    updateGallery();
+
+    showFinalImage(dataURL);
+  }
+
+  /********** Display Final Image **********/
+  function showFinalImage(dataURL) {
+    finalContainer.style.display = 'flex';
+    finalCtx.clearRect(0, 0, finalCanvas.width, finalCanvas.height);
+    const img = new Image();
+    img.onload = () => {
+      finalCtx.drawImage(img, 0, 0, finalCanvas.width, finalCanvas.height);
+    };
+    img.src = dataURL;
+  }
+
+  /********** Update Gallery **********/
+  function updateGallery() {
+    gallery.innerHTML = '';
+    capturedImages.forEach((img, i) => {
+      const thumb = document.createElement('img');
+      thumb.src = img;
+      thumb.setAttribute('data-index', i.toString());
+      gallery.appendChild(thumb);
+    });
+  }
+  </script>
+</body>
+</html>
